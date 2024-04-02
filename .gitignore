@@ -1,0 +1,31 @@
+# Ignore node_modules directory
+node_modules/
+
+# Ignore database configuration files containing sensitive information
+/config/db-config.js
+/config/database.json
+
+# Ignore files containing sensitive keys
+*.key
+*.pem
+*.p12
+*.pem
+*.cer
+*.crt
+*.cert
+*.pem
+*.pfx
+*.jks
+*.keystore
+*.pkcs12
+*.pem
+*.p7b
+*.asc
+
+# Ignore environment configuration files containing sensitive information
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production

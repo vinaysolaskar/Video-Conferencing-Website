@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>hello world</title>
+    <style>
+        *{
+    margin: 0;
+    padding: 0;
+}
+
+.container{
+    width: 100vw;
+    height: 100vh;
+    background-color: rgb(117, 201, 227);
+    display: flex;
+    flex-direction: row;
+}
+
+.videos{
+    width: 75%;
+    height: 100%;
+    background-color: rgb(36, 10, 10);
+}
+
+.livechat{
+    width: 25%;
+    height: 100%;
+    background-color: rgb(137, 137, 246);
+    display: flex;
+    flex-direction: column;
+}
+
+.chatDisplay{
+    height: 94%;
+    width: 100%;
+    background-color: yellow;
+    color: black;
+    overflow: scroll;
+}
+
+.massageInputArea{
+    height: 6%;
+    width: 100%;
+    background-color: #fff;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    align-items: center;
+}
+
+#userinput{
+    height: 80%;
+    width: 70%;
+}
+
+.btn{
+    height: 80%;
+    width: 20%;
+}
+
+.chatleft{
+    height: auto;
+    width: auto;
+    float: left;
+    clear:both;
+    margin: 5px;
+    padding: 5px;
+    background-color: rgb(158, 237, 237);
+    border-radius: 5px;
+}
+
+.chatright{
+    height: auto;
+    width: auto;
+    float: right;
+    clear:both;
+    margin: 5px;
+    padding: 5px;
+    background-color: rgb(158, 237, 237);
+    border-radius: 5px;
+}
+
+.center{
+    height: auto;
+    width: auto;
+    float: center;
+    clear:both;
+}
+
+
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="videos" class="videos">
+
+        </div>
+        <div id="controls">
+            <button id="toggleMic">Mute</button>
+            <button id="toggleVideo">Turn Off Camera</button>
+        </div>
+    
+        <div class="livechat">
+            <div class="chatDisplay">
+                <div class="chatleft">
+                    <!-- <p class="user" id="user">user</p>
+                    <p class="msg">something something</p> -->
+                </div>
+                <div class="chatright">
+                    <!-- <p class="user" id="you">you</p>
+                    <p class="msg">something something</p> -->
+                </div>
+            </div>
+            <div class="massageInputArea">
+                <form action="#" id="sendcontainer" >
+                    <input type="text" id="userinput">
+                    <button type="submit" class="btn">Send</button>
+                </form>
+
+            </div>
+        </div>
+    </div>
+</body>
+<script>
+    function pinVideo(streamId) {
+        var videoContainer = document.getElementById(streamId).parentNode;
+        if (videoContainer.classList.contains("pinned")) {
+            videoContainer.classList.remove("pinned");
+            if (document.querySelectorAll('.video-container.pinned').length === 0) {
+                document.getElementById('videos').style.left = '50%'; // Center the videos
+            }
+        } else {
+            var pinnedVideos = document.querySelectorAll('.video-container.pinned').length;
+            if (pinnedVideos > 0) {
+                document.getElementById('videos').style.left = '-100%'; // Move to the left
+            }
+            videoContainer.classList.add("pinned");
+        }
+    }
+
+</script>
+<script type="module">
+    import { io } from "https://cdn.socket.io/4.7.5/socket.io.esm.min.js";
+    const socket = io();
+    const username = prompt("Please enter your name:");
+    let userinput = document.getElementById("userinput");
+    let form = document.getElementById("sendcontainer");
+    let chatDisplay = document.querySelector(".chatDisplay")
+
+    const append = (massage,position)=>{
+        const massageElement = document.createElement('div');
+        massageElement.innerText = massage;
+        // massageElement.classList.add(massage);
+        massageElement.classList.add(position);
+        chatDisplay.append(massageElement);
+    }
+
+    form.addEventListener('submit',(e)=>{
+        e.preventDefault();
+        const massage =userinput.value;
+        append(`you:\n ${massage}`,'chatright');
+        socket.emit('send', massage);
+        userinput.value='';
+    });
+
+    
+    
+    socket.emit("new-user-jioned",username);
+    socket.on("user-joined", (joinedname)=>{
+        append(`${joinedname} joined the chat`,'center');
+    });
+
+    socket.on("recieve", (data)=>{
+        console.log(data);
+        append(`${data.name}:\n ${data.massage}`,'chatleft');
+    });
+
+    // const socket = new WebSocket('ws://localhost:3000');
+
+let localStream;
+let localVideoStream;
+let isMicEnabled = true;
+let isVideoEnabled = true;
+
+socket.onopen = function () {
+    console.log('WebSocket connection opened');
+};
+
+socket.onmessage = function (event) {
+    console.log('Received message:', event.data);
+    
+    if (typeof event.data === 'string') {
+        // Handle JSON messages
+        const message = JSON.parse(event.data);
+        console.log('Parsed message:', message);
+        
+        if (message.type === 'offer') {
+            handleOffer(message.offer);
+        } else if (message.type === 'answer') {
+            handleAnswer(message.answer);
+        } else if (message.type === 'iceCandidate') {
+            handleIceCandidate(message.candidate);
+        }
+    } else if (event.data instanceof Blob) {
+        // Handle Blob messages (e.g., video streams)
+        handleVideoStream(event.data);
+    } else {
+        // Handle other types of messages if needed
+        console.log('Unknown message type:', typeof event.data);
+    }
+};
+
+let peerConnection;
+const localVideo = document.createElement('video');
+localVideo.autoplay = true;
+document.getElementById('videos').appendChild(localVideo);
+
+navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then(function (mediaStream) {
+        localStream = mediaStream;
+        localVideoStream = new MediaStream();
+        mediaStream.getTracks().forEach(track => {
+            localVideoStream.addTrack(track);
+        });
+        localVideo.srcObject = localVideoStream;
+        createPeerConnection();
+        createOffer();
+    })
+    .catch(function (error) {
+        console.error('Error accessing media devices:', error);
+    });
+
+function createPeerConnection() {
+    try {
+        peerConnection = new RTCPeerConnection();
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+        peerConnection.onicecandidate = function (event) {
+            if (event.candidate) {
+                sendIceCandidate(event.candidate);
+            }
+        };
+        peerConnection.ontrack = function (event) {
+            handleRemoteStream(event.streams[0]);
+        };
+    } catch (e) {
+        console.error('Error creating peer connection:', e);
+    }
+}
+
+async function createOffer() {
+    try {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        sendOffer(peerConnection.localDescription);
+    } catch (e) {
+        console.error('Error creating offer:', e);
+    }
+}
+
+async function handleOffer(offer) {
+    try {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        sendAnswer(peerConnection.localDescription);
+    } catch (e) {
+        console.error('Error handling offer:', e);
+    }
+}
+
+async function handleAnswer(answer) {
+    try {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    } catch (e) {
+        console.error('Error handling answer:', e);
+    }
+}
+
+function sendOffer(offer) {
+    socket.send(JSON.stringify({ type: 'offer', offer: offer }));
+}
+
+function sendAnswer(answer) {
+    socket.send(JSON.stringify({ type: 'answer', answer: answer }));
+}
+
+function sendIceCandidate(candidate) {
+    socket.send(JSON.stringify({ type: 'iceCandidate', candidate: candidate }));
+}
+
+async function handleIceCandidate(candidate) {
+    try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+        console.error('Error handling ICE candidate:', e);
+    }
+}
+
+// Handle incoming video stream
+// function handleVideoStream(streamBlob) {
+//     const remoteVideo = document.createElement('video');
+//     remoteVideo.autoplay = true;
+//     remoteVideo.src = URL.createObjectURL(streamBlob);
+//     document.getElementById('videos').appendChild(remoteVideo);
+// }
+//Handle incoming video stream
+// function handleVideoStream(streamBlob) {
+//     if (!document.getElementById('remoteVideo')) {
+//         const remoteVideo = document.createElement('video');
+//         remoteVideo.id = 'remoteVideo';
+//         remoteVideo.autoplay = true;
+//         document.getElementById('videos').appendChild(remoteVideo);
+//     }
+//     const remoteVideo = document.getElementById('remoteVideo');
+//     remoteVideo.src = URL.createObjectURL(streamBlob);
+// }
+// Handle incoming video stream
+// Handle incoming video stream
+function handleVideoStream(streamBlob) {
+    console.log("Received video stream:", streamBlob);
+
+    const remoteVideo = document.getElementById('remoteVideo');
+    if (!remoteVideo) {
+        console.log("Creating new remote video element.");
+        const newRemoteVideo = document.createElement('video');
+        newRemoteVideo.id = 'remoteVideo';
+        newRemoteVideo.autoplay = true;
+        document.getElementById('videos').appendChild(newRemoteVideo);
+        if (streamBlob instanceof Blob) {
+            console.log("Converting Blob to MediaStream.");
+            const stream = URL.createObjectURL(streamBlob);
+            const blobVideo = document.createElement('video');
+            blobVideo.src = stream;
+            blobVideo.onloadedmetadata = function() {
+                const tracks = blobVideo.captureStream().getTracks();
+                const newStream = new MediaStream(tracks);
+                newRemoteVideo.srcObject = newStream;
+                console.log("Remote video srcObject:", newRemoteVideo.srcObject); // Debugging
+            };
+        } else if (streamBlob instanceof MediaStream) {
+            console.log("Using MediaStream directly.");
+            newRemoteVideo.srcObject = streamBlob;
+            console.log("Remote video srcObject:", newRemoteVideo.srcObject); // Debugging
+        } else {
+            console.error("Invalid stream type received.");
+        }
+    } else {
+        if (streamBlob instanceof Blob) {
+            // Convert Blob to MediaStream
+            const stream = URL.createObjectURL(streamBlob);
+            const blobVideo = document.createElement('video');
+            blobVideo.src = stream;
+            blobVideo.onloadedmetadata = function() {
+                const tracks = blobVideo.captureStream().getTracks();
+                const newStream = new MediaStream(tracks);
+                remoteVideo.srcObject = newStream;
+            };
+        } else if (streamBlob instanceof MediaStream) {
+            remoteVideo.srcObject = streamBlob;
+        } else {
+            console.error("Invalid stream type received.");
+        }
+    }
+}
+
+
+
+
+// Toggle microphone
+document.getElementById('toggleMic').addEventListener('click', function () {
+    localStream.getAudioTracks().forEach(track => {
+        track.enabled = !track.enabled;
+        isMicEnabled = track.enabled;
+    });
+    document.getElementById('toggleMic').innerText = isMicEnabled ? 'Mute' : 'Unmute';
+});
+
+// Toggle camera
+document.getElementById('toggleVideo').addEventListener('click', function () {
+    localStream.getVideoTracks().forEach(track => {
+        track.enabled = !track.enabled;
+        isVideoEnabled = track.enabled;
+    });
+    document.getElementById('toggleVideo').innerText = isVideoEnabled ? 'Turn Off Camera' : 'Turn On Camera';
+});
+
+
+    </script>
+</html>
